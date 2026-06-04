@@ -1,0 +1,3 @@
+[submodule "revizor-riscv/revizor-src"]
+	path = revizor-riscv/revizor-src
+	url = https://github.com/HZXavier/side-channel-fuzzer.git
