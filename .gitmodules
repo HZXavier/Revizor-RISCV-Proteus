@@ -1,3 +1,6 @@
 [submodule "revizor-riscv/revizor-src"]
 	path = revizor-riscv/revizor-src
 	url = https://github.com/HZXavier/side-channel-fuzzer.git
+[submodule "proteus"]
+	path = proteus
+	url = https://github.com/HZXavier/proteus.git
