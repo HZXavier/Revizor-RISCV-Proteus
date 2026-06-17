@@ -119,8 +119,21 @@ _start:
     sw   x13, 32(x1)
     sw   x14, 36(x1)
     sw   x15, 40(x1)
-    sw   x28, 44(x1)
-
+    sw   x16, 44(x1)
+    sw   x17, 48(x1)
+    sw   x18, 52(x1)
+    sw   x19, 56(x1)
+    sw   x20, 60(x1)
+    sw   x21, 64(x1)
+    sw   x22, 68(x1)
+    sw   x23, 72(x1)
+    sw   x24, 76(x1)
+    sw   x25, 80(x1)
+    sw   x26, 84(x1)
+    sw   x27, 88(x1)
+    sw   x28, 92(x1)
+    sw   x29, 96(x1)
+    
     # halt: write EOT (0x4) to CharDev at 0x10000000
     lui  x1, 0x10000
     li   x2, 4
