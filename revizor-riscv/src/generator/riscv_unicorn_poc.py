@@ -54,30 +54,30 @@ def format_instruction(instr):
 def compile_to_binary(asm_line):
     source = f".section .text\n.globl _start\n_start:\n    {asm_line}\n"
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_path = Path(tmpdir) / "test.s"
-        obj_path = Path(tmpdir) / "test.o"
-        bin_path = Path(tmpdir) / "test.bin"
+    # On écrit directement dans le dossier courant (fini le tempfile)
+    src_path = Path("test.s")
+    obj_path = Path("test.o")
+    bin_path = Path("test.bin")
 
-        src_path.write_text(source, encoding="utf-8")
+    src_path.write_text(source, encoding="utf-8")
 
-        # Step 1: assemble text into object file
-        res_as = subprocess.run(
-            ["riscv64-elf-as", "-march=rv32im", "-o", str(obj_path), str(src_path)],
-            capture_output=True,
-        )
-        if res_as.returncode != 0:
-            return None, f"Assembler error: {res_as.stderr.decode()}"
+    # Step 1: assemble text into object file
+    res_as = subprocess.run(
+        ["riscv64-elf-as", "-march=rv32im", "-o", str(obj_path), str(src_path)],
+        capture_output=True,
+    )
+    if res_as.returncode != 0:
+        return None, f"Assembler error: {res_as.stderr.decode()}"
 
-        # Step 2: extract raw machine code from object file
-        res_obj = subprocess.run(
-            ["riscv64-elf-objcopy", "-O", "binary", str(obj_path), str(bin_path)],
-            capture_output=True,
-        )
-        if res_obj.returncode != 0:
-            return None, f"Objcopy error: {res_obj.stderr.decode()}"
+    # Step 2: extract raw machine code from object file
+    res_obj = subprocess.run(
+        ["riscv64-elf-objcopy", "-O", "binary", str(obj_path), str(bin_path)],
+        capture_output=True,
+    )
+    if res_obj.returncode != 0:
+        return None, f"Objcopy error: {res_obj.stderr.decode()}"
 
-        return bin_path.read_bytes(), "OK"
+    return bin_path.read_bytes(), "OK"
 
 
 def run_in_unicorn(machine_code):

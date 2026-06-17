@@ -106,10 +106,10 @@ _start:
     {instr_line}
     # ========================
 
-    # dump registers to 0x80002000 for post-sim readback
-    lui  x1, 0x80002
-    sw   x5,  0(x1)
-    sw   x6,  4(x1)
+    # dump registers — x31 comme pointeur (réservé)
+    lui  x31, 0x80002
+    sw   x5,  0(x31)
+    sw   x6,  4(x31)
     sw   x7,  8(x1)
     sw   x8,  12(x1)
     sw   x9,  16(x1)
@@ -132,12 +132,12 @@ _start:
     sw   x26, 84(x1)
     sw   x27, 88(x1)
     sw   x28, 92(x1)
-    sw   x29, 96(x1)
-    
-    # halt: write EOT (0x4) to CharDev at 0x10000000
-    lui  x1, 0x10000
-    li   x2, 4
-    sb   x2, 0(x1)
+    sw   x29, 96(x31)
+
+    # halt via CharDev — x30/x31 réservés
+    lui  x30, 0x10000
+    li   x31, 4
+    sb   x31, 0(x30)
 1:  j 1b
 """
 
