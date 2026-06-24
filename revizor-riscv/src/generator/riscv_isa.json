@@ -1383,8 +1383,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Op\u00e8re sur 32 bits, r\u00e9sultat sign-extended sur 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "SUBW",
@@ -1510,8 +1509,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Op\u00e8re sur 32 bits, r\u00e9sultat sign-extended sur 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "SLLW",
@@ -1637,8 +1635,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Op\u00e8re sur 32 bits, r\u00e9sultat sign-extended sur 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "SRLW",
@@ -1764,8 +1761,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Op\u00e8re sur 32 bits, r\u00e9sultat sign-extended sur 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "SRAW",
@@ -1891,8 +1887,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Op\u00e8re sur 32 bits, r\u00e9sultat sign-extended sur 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "ADDI",
@@ -2564,8 +2559,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Addition 32 bits avec sign-extension sur 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "SLLI",
@@ -2661,8 +2655,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "D\u00e9calage 64 bits, shamt sur 6 bits"
+    "implicit_operands": []
   },
   {
     "name": "SRLI",
@@ -2758,8 +2751,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "D\u00e9calage 64 bits, shamt sur 6 bits"
+    "implicit_operands": []
   },
   {
     "name": "SRAI",
@@ -2855,8 +2847,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "D\u00e9calage 64 bits, shamt sur 6 bits"
+    "implicit_operands": []
   },
   {
     "name": "SLLIW",
@@ -2952,8 +2943,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "D\u00e9calage 32 bits, shamt sur 5 bits, r\u00e9sultat sign-extended"
+    "implicit_operands": []
   },
   {
     "name": "SRLIW",
@@ -3049,8 +3039,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "D\u00e9calage 32 bits, shamt sur 5 bits, r\u00e9sultat sign-extended"
+    "implicit_operands": []
   },
   {
     "name": "SRAIW",
@@ -3146,8 +3135,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "D\u00e9calage 32 bits, shamt sur 5 bits, r\u00e9sultat sign-extended"
+    "implicit_operands": []
   },
   {
     "name": "LUI",
@@ -3365,7 +3353,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "Charge 8 bits depuis MEM[rs1+offset]"
+    "_comment": "Load 8-bit value from MEM[rs1+offset]"
   },
   {
     "name": "LBU",
@@ -3462,7 +3450,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "Charge 8 bits depuis MEM[rs1+offset]"
+    "_comment": "Load 8-bit value from MEM[rs1+offset]"
   },
   {
     "name": "LH",
@@ -3559,7 +3547,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "Charge 16 bits depuis MEM[rs1+offset]"
+    "_comment": "Load 16-bit value from MEM[rs1+offset]"
   },
   {
     "name": "LHU",
@@ -3656,7 +3644,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "Charge 16 bits depuis MEM[rs1+offset]"
+    "_comment": "Load 16-bit value from MEM[rs1+offset]"
   },
   {
     "name": "LW",
@@ -3753,7 +3741,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "Charge 32 bits depuis MEM[rs1+offset]"
+    "_comment": "Load 32-bit value from MEM[rs1+offset]"
   },
   {
     "name": "LWU",
@@ -3850,7 +3838,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "Charge 32 bits depuis MEM[rs1+offset]"
+    "_comment": "Load 32-bit value from MEM[rs1+offset]"
   },
   {
     "name": "LD",
@@ -3947,7 +3935,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "Charge 64 bits depuis MEM[rs1+offset]"
+    "_comment": "Load 64-bit value from MEM[rs1+offset]"
   },
   {
     "name": "SB",
@@ -4049,7 +4037,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "\u00c9crit 8 bits dans MEM[rs1+offset]"
+    "_comment": "Store 8-bit value to MEM[rs1+offset]"
   },
   {
     "name": "SH",
@@ -4151,7 +4139,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "\u00c9crit 16 bits dans MEM[rs1+offset]"
+    "_comment": "Store 16-bit value to MEM[rs1+offset]"
   },
   {
     "name": "SW",
@@ -4253,7 +4241,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "\u00c9crit 32 bits dans MEM[rs1+offset]"
+    "_comment": "Store 32-bit value to MEM[rs1+offset]"
   },
   {
     "name": "SD",
@@ -4355,7 +4343,7 @@
       }
     ],
     "implicit_operands": [],
-    "_comment": "\u00c9crit 64 bits dans MEM[rs1+offset]"
+    "_comment": "Store 64-bit value to MEM[rs1+offset]"
   },
   {
     "name": "BEQ",
@@ -5305,8 +5293,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "MULH",
@@ -5432,8 +5419,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "MULHSU",
@@ -5559,8 +5545,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "MULHU",
@@ -5686,8 +5671,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "DIV",
@@ -5813,8 +5797,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "DIVU",
@@ -5940,8 +5923,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "REM",
@@ -6067,8 +6049,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "REMU",
@@ -6194,8 +6175,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 64 bits"
+    "implicit_operands": []
   },
   {
     "name": "MULW",
@@ -6321,8 +6301,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 32 bits, r\u00e9sultat sign-extended"
+    "implicit_operands": []
   },
   {
     "name": "DIVW",
@@ -6448,8 +6427,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 32 bits, r\u00e9sultat sign-extended"
+    "implicit_operands": []
   },
   {
     "name": "DIVUW",
@@ -6575,8 +6553,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 32 bits, r\u00e9sultat sign-extended"
+    "implicit_operands": []
   },
   {
     "name": "REMW",
@@ -6702,8 +6679,7 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 32 bits, r\u00e9sultat sign-extended"
+    "implicit_operands": []
   },
   {
     "name": "REMUW",
@@ -6829,7 +6805,6 @@
         ]
       }
     ],
-    "implicit_operands": [],
-    "_comment": "Multiplication/division 32 bits, r\u00e9sultat sign-extended"
+    "implicit_operands": []
   }
 ]

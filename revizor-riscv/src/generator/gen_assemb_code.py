@@ -1,3 +1,12 @@
+"""
+Validates riscv_isa.json by feeding each instruction to riscv64-elf-as.
+
+Usage:
+    python3 test_instructions.py riscv_isa.json --all
+    python3 test_instructions.py riscv_isa.json -i ADD
+    python3 test_instructions.py riscv_isa.json --seed 42
+"""
+
 import argparse
 import json
 import random
@@ -21,80 +30,63 @@ def pick_immediate(operand: Dict[str, Any]) -> int:
     m = RANGE_RE.match(raw)
     if not m:
         raise ValueError(f"Malformed range: {raw}")
-    lo, hi = int(m.group(1)), int(m.group(2))
-    return random.randint(lo, hi)
+    return random.randint(int(m.group(1)), int(m.group(2)))
 
 
 def pick_label() -> str:
-    # Placeholder label so branch instructions have a valid target during assembly
+    # Placeholder target placed right after the test instruction.
     return "lbl_target"
 
 
 def format_instruction(instr: Dict[str, Any]) -> str:
-    """Build the assembly text for one instruction based on its category."""
-    name = instr["name"]
-    cat = instr["category"]
-    operands = instr["operands"]
+    """Render one instruction as an assembly line based on its category."""
+    name = instr["name"].lower()
+    cat  = instr["category"]
+    ops  = instr["operands"]
 
-    # Loads: LX rd, offset(rs1)
     if cat == "RV64I-LOAD":
-        rd     = pick_register(operands[0])
-        offset = pick_immediate(operands[1])
-        rs1    = pick_register(operands[2])
-        return f"{name.lower()} {rd}, {offset}({rs1})"
+        # LX rd, offset(rs1)
+        return f"{name} {pick_register(ops[0])}, {pick_immediate(ops[1])}({pick_register(ops[2])})"
 
-    # Stores: SX rs2, offset(rs1)
     if cat == "RV64I-STORE":
-        rs2    = pick_register(operands[0])
-        offset = pick_immediate(operands[1])
-        rs1    = pick_register(operands[2])
-        return f"{name.lower()} {rs2}, {offset}({rs1})"
+        # SX rs2, offset(rs1)
+        return f"{name} {pick_register(ops[0])}, {pick_immediate(ops[1])}({pick_register(ops[2])})"
 
-    # Conditional branches: BXX rs1, rs2, label
     if cat == "RV64I-COND-BR":
-        rs1 = pick_register(operands[0])
-        rs2 = pick_register(operands[1])
-        lbl = pick_label()
-        return f"{name.lower()} {rs1}, {rs2}, {lbl}"
+        # BXX rs1, rs2, label
+        return f"{name} {pick_register(ops[0])}, {pick_register(ops[1])}, {pick_label()}"
 
-    # JAL: jal rd, label
     if cat == "RV64I-UNCOND-BR":
-        rd  = pick_register(operands[0])
-        lbl = pick_label()
-        return f"{name.lower()} {rd}, {lbl}"
+        # JAL rd, label
+        return f"{name} {pick_register(ops[0])}, {pick_label()}"
 
-    # JALR: jalr rd, imm(rs1)
     if cat == "RV64I-INDIRECT-BR":
-        rd  = pick_register(operands[0])
-        rs1 = pick_register(operands[1])
-        imm = pick_immediate(operands[2])
-        return f"{name.lower()} {rd}, {imm}({rs1})"
+        # JALR rd, imm(rs1)
+        return f"{name} {pick_register(ops[0])}, {pick_immediate(ops[2])}({pick_register(ops[1])})"
 
-    # LUI / AUIPC: OP rd, imm20
     if cat == "RV64I-UPPER-IMM":
-        rd  = pick_register(operands[0])
-        imm = pick_immediate(operands[1])
-        return f"{name.lower()} {rd}, {imm}"
+        # LUI / AUIPC: OP rd, imm20
+        return f"{name} {pick_register(ops[0])}, {pick_immediate(ops[1])}"
 
-    # Default: OP rd, rs1, rs2 or OP rd, rs1, imm (R-type, I-type, shifts, M-ext)
-    parts = []
-    for op in operands:
+    # Default: positional REG/IMM operands (covers all ARITH, SHIFT, MULDIV variants).
+    parts: List[str] = []
+    for op in ops:
         if op["type_"] == "REG":
             parts.append(pick_register(op))
         elif op["type_"] == "IMM":
             parts.append(str(pick_immediate(op)))
         else:
             raise ValueError(f"Unexpected operand type: {op['type_']}")
-    return f"{name.lower()} {', '.join(parts)}"
+    return f"{name} {', '.join(parts)}"
 
 
-def build_asm_source(asm_line: str, needs_label: bool) -> str:
-    """Wrap one instruction in a minimal .s file the assembler will accept."""
-    label_block = ""
-    if needs_label:
-        # Branch targets need a real label with at least one instruction after them
-        label_block = "lbl_target:\n    nop\n"
+def needs_label(instr: Dict[str, Any]) -> bool:
+    return any(op["type_"] == "LABEL" for op in instr["operands"])
 
+
+def build_asm_source(asm_line: str, with_label: bool) -> str:
+    """Wrap one instruction in a minimal .S file the assembler will accept."""
+    label_block = "lbl_target:\n    nop\n" if with_label else ""
     return (
         ".section .text\n"
         ".globl _start\n"
@@ -105,58 +97,46 @@ def build_asm_source(asm_line: str, needs_label: bool) -> str:
 
 
 def assemble(asm_source: str) -> Tuple[bool, str]:
-    """Write source to a temp file and invoke riscv64-elf-as. Returns (success, message)."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_path = Path(tmpdir) / "test.s"
-        obj_path = Path(tmpdir) / "test.o"
-        src_path.write_text(asm_source, encoding="utf-8")
+    """Run riscv64-elf-as on the source. Returns (success, message)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "test.s"
+        obj = Path(tmp) / "test.o"
+        src.write_text(asm_source, encoding="utf-8")
 
         try:
-            result = subprocess.run(
-                ["riscv64-elf-as",
-                 "-march=rv64im",
-                 "-o", str(obj_path),
-                 str(src_path)],
-                capture_output=True,
-                text=True,
-                timeout=10,
+            r = subprocess.run(
+                ["riscv64-elf-as", "-march=rv64im", "-o", str(obj), str(src)],
+                capture_output=True, text=True, timeout=10,
             )
         except FileNotFoundError:
-            return False, "riscv64-elf-as not found. Install binutils-riscv64-linux-gnu."
+            return False, "riscv64-elf-as not found. Install binutils for RISC-V."
         except subprocess.TimeoutExpired:
-            return False, "Assembler timed out after 10 seconds"
+            return False, "Assembler timed out after 10s."
 
-        if result.returncode == 0:
+        if r.returncode == 0:
             return True, "OK"
-        return False, result.stderr.strip() or result.stdout.strip()
-
-
-def needs_label(instr: Dict[str, Any]) -> bool:
-    return any(op["type_"] == "LABEL" for op in instr["operands"])
+        return False, (r.stderr or r.stdout).strip()
 
 
 def run_one(instr: Dict[str, Any], verbose: bool = True) -> bool:
-    """Generate and assemble one instruction. Returns True if the assembler accepts it."""
-    asm_line = format_instruction(instr)
-    source = build_asm_source(asm_line, needs_label(instr))
-    ok, msg = assemble(source)
+    """Generate one instruction and assemble it. Returns True if accepted."""
+    line = format_instruction(instr)
+    src  = build_asm_source(line, needs_label(instr))
+    ok, msg = assemble(src)
 
     if verbose:
         status = "[OK]" if ok else "[KO]"
-        print(f"{status} {instr['name']:8s}  ->  {asm_line}")
+        print(f"{status} {instr['name']:8s}  ->  {line}")
         if not ok:
-            print(f"     error: {msg}")
+            print(f"     {msg}")
 
     return ok
 
 
 def run_all(instructions: List[Dict[str, Any]]) -> None:
-    """Test every instruction in the JSON one by one."""
+    """Test every instruction in the spec."""
     print(f"Testing {len(instructions)} instructions...\n")
-    failures = []
-    for instr in instructions:
-        if not run_one(instr, verbose=True):
-            failures.append(instr["name"])
+    failures = [i["name"] for i in instructions if not run_one(i)]
 
     print("\n" + "=" * 60)
     if not failures:
@@ -168,12 +148,12 @@ def run_all(instructions: List[Dict[str, Any]]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate and test RISC-V instructions")
-    parser.add_argument("json_path", help="Path to the ISA JSON file")
-    parser.add_argument("--instruction", "-i", help="Test a specific instruction by name")
-    parser.add_argument("--all", "-a", action="store_true", help="Test all instructions in the JSON")
-    parser.add_argument("--seed", type=int, help="Random seed for reproducibility")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser(description="Validate riscv_isa.json against the assembler")
+    ap.add_argument("json_path", help="Path to the ISA JSON file")
+    ap.add_argument("-i", "--instruction", help="Test a specific instruction by name")
+    ap.add_argument("-a", "--all", action="store_true", help="Test every instruction")
+    ap.add_argument("--seed", type=int, help="Random seed for reproducibility")
+    args = ap.parse_args()
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -186,13 +166,11 @@ def main() -> int:
     elif args.instruction:
         matches = [i for i in instructions if i["name"] == args.instruction.upper()]
         if not matches:
-            print(f"Instruction '{args.instruction}' not found in the JSON.")
+            print(f"Instruction '{args.instruction}' not found.")
             return 1
         run_one(matches[0])
     else:
-        # Default: pick one random instruction
-        instr = random.choice(instructions)
-        run_one(instr)
+        run_one(random.choice(instructions))
 
     return 0
 

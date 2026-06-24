@@ -1,18 +1,15 @@
 """
-Full RISC-V pipeline with memory sandbox.
+Third Unicorn PoC: introduces a memory sandbox so loads and stores actually work.
 
-For a randomly picked instruction from the JSON:
-  1. Pick operands (with sandbox constraint for loads/stores),
-  2. Build the assembly text,
-  3. Assemble + extract bytecode,
-  4. Run in Unicorn and print registers.
-
-Memory sandbox:
-  - x30 = base of the DATA region (0x300000), used as base address for all loads/stores
-  - x31 = reserved auxiliary register
-  - All other registers get random values
+Difference from v2:
+  - x30 is reserved as the base address of a mapped DATA region.
+  - Loads and stores are forced to use x30 as the base register, so any
+    offset in [-2048, 2047] lands inside the sandbox.
+  - DATA region is pre-filled with a recognizable pattern so loads return
+    non-zero, observable values.
 """
 
+import argparse
 import json
 import random
 import re
@@ -22,23 +19,30 @@ import tempfile
 from pathlib import Path
 
 from unicorn import Uc, UC_ARCH_RISCV, UC_MODE_RISCV64, UcError, UC_HOOK_CODE
-from unicorn.riscv_const import *  # noqa: imports UC_RISCV_REG_X*
+from unicorn.riscv_const import *
 
 
 RANGE_RE = re.compile(r"^\[(-?\d+)-(-?\d+)\]$")
 
-ADDRESS_CODE = 0x10000   # region where emulated code lives
-ADDRESS_DATA = 0x300000  # region where loads/stores go
+ADDRESS_CODE = 0x10000
+ADDRESS_DATA = 0x300000
 
-# x30 is set to ADDRESS_DATA so any address x30+offset stays inside the mapped region
-# as long as offset stays within [-2048, 2047]
+# Map the DATA region one page below ADDRESS_DATA so x30 + negative offsets
+# still land inside the mapped area.
+DATA_PAGE_START = ADDRESS_DATA - 0x10000
+DATA_PAGE_SIZE  = 1 * 1024 * 1024   # 1 MiB
+CODE_REGION_SIZE = 2 * 1024 * 1024  # 2 MiB
+
+# Sandbox base register: holds ADDRESS_DATA, used as rs1 for every load/store.
 SANDBOX_BASE_REG = "x30"
-SANDBOX_AUX_REG  = "x31"
+RESERVED_REGS    = {SANDBOX_BASE_REG}
 
-# These registers must not be overwritten by random instructions,
-# otherwise the sandbox breaks for any load/store that follows
-RESERVED_REGS = {SANDBOX_BASE_REG, SANDBOX_AUX_REG}
+# x1..x31 — x0 is hardwired to zero so we skip it.
+TRACKED_REGS = list(range(1, 32))
+UC_REG = {i: globals()[f"UC_RISCV_REG_X{i}"] for i in range(32)}
 
+
+# ── Operand pickers ──────────────────────────────────────────────────────────
 
 def pick_register(operand, exclude=None):
     candidates = operand["values"]
@@ -62,53 +66,51 @@ def get_operand_by_name(operands, name):
     raise KeyError(f"Operand '{name}' not found")
 
 
-def format_instruction(instr):
-    """Build the assembly line. Forces rs1=x30 for loads/stores to stay in the sandbox."""
-    name = instr["name"].lower()
-    cat = instr["category"]
-    ops = instr["operands"]
+# ── Instruction formatting ───────────────────────────────────────────────────
 
-    # Loads: LX rd, offset(rs1) — force rs1=x30, protect rd from clobbering sandbox regs
+def format_instruction(instr):
+    """Render one JSON entry as assembly. Forces rs1=x30 for loads/stores."""
+    name = instr["name"].lower()
+    cat  = instr["category"]
+    ops  = instr["operands"]
+
+    # Loads: force rs1=x30, protect rd from clobbering the sandbox base.
     if cat == "RV64I-LOAD":
         rd     = pick_register(get_operand_by_name(ops, "rd"), exclude=RESERVED_REGS)
         offset = pick_immediate(get_operand_by_name(ops, "offset"))
-        rs1    = SANDBOX_BASE_REG
-        return f"{name} {rd}, {offset}({rs1})"
+        return f"{name} {rd}, {offset}({SANDBOX_BASE_REG})"
 
-    # Stores: SX rs2, offset(rs1) — force rs1=x30, rs2 can be anything
+    # Stores: force rs1=x30, rs2 can be anything.
     if cat == "RV64I-STORE":
         rs2    = pick_register(get_operand_by_name(ops, "rs2"))
         offset = pick_immediate(get_operand_by_name(ops, "offset"))
-        rs1    = SANDBOX_BASE_REG
-        return f"{name} {rs2}, {offset}({rs1})"
+        return f"{name} {rs2}, {offset}({SANDBOX_BASE_REG})"
 
-    # JALR: jalr rd, imm12(rs1)
     if cat == "RV64I-INDIRECT-BR":
         rd  = pick_register(get_operand_by_name(ops, "rd"))
         rs1 = pick_register(get_operand_by_name(ops, "rs1"))
         imm = pick_immediate(get_operand_by_name(ops, "imm12"))
         return f"{name} {rd}, {imm}({rs1})"
 
-    # LUI / AUIPC: OP rd, imm20 — protect rd from clobbering sandbox regs
     if cat == "RV64I-UPPER-IMM":
         rd  = pick_register(get_operand_by_name(ops, "rd"), exclude=RESERVED_REGS)
         imm = pick_immediate(get_operand_by_name(ops, "imm20"))
         return f"{name} {rd}, {imm}"
 
-    # Default: OP arg1, arg2, arg3 — protect destination from clobbering sandbox regs
+    # Default: positional REG/IMM operands. Protect destinations only.
     parts = []
     for op in ops:
         if op["type_"] == "REG":
-            if op["dest"]:
-                parts.append(pick_register(op, exclude=RESERVED_REGS))
-            else:
-                parts.append(pick_register(op))
+            excl = RESERVED_REGS if op["dest"] else None
+            parts.append(pick_register(op, exclude=excl))
         elif op["type_"] == "IMM":
             parts.append(str(pick_immediate(op)))
         else:
             raise ValueError(f"Unexpected operand type: {op['type_']}")
     return f"{name} {', '.join(parts)}"
 
+
+# ── Compilation via riscv64-elf binutils ─────────────────────────────────────
 
 def compile_to_binary(asm_line):
     source = (
@@ -118,100 +120,87 @@ def compile_to_binary(asm_line):
         f"    {asm_line}\n"
     )
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_path = Path(tmpdir) / "test.s"
-        obj_path = Path(tmpdir) / "test.o"
-        bin_path = Path(tmpdir) / "test.bin"
-        src_path.write_text(source, encoding="utf-8")
+    with tempfile.TemporaryDirectory() as tmp:
+        src  = Path(tmp) / "test.s"
+        obj  = Path(tmp) / "test.o"
+        bin_ = Path(tmp) / "test.bin"
+        src.write_text(source, encoding="utf-8")
 
-        r_as = subprocess.run(
-            ["riscv64-elf-as", "-march=rv64im", "-o", str(obj_path), str(src_path)],
+        r = subprocess.run(
+            ["riscv64-elf-as", "-march=rv64im", "-o", str(obj), str(src)],
             capture_output=True,
         )
-        if r_as.returncode != 0:
-            return None, f"Assembler error: {r_as.stderr.decode()}"
+        if r.returncode != 0:
+            return None, f"Assembler error: {r.stderr.decode()}"
 
-        r_oc = subprocess.run(
-            ["riscv64-elf-objcopy", "-O", "binary", str(obj_path), str(bin_path)],
+        r = subprocess.run(
+            ["riscv64-elf-objcopy", "-O", "binary", str(obj), str(bin_)],
             capture_output=True,
         )
-        if r_oc.returncode != 0:
-            return None, f"Objcopy error: {r_oc.stderr.decode()}"
+        if r.returncode != 0:
+            return None, f"objcopy error: {r.stderr.decode()}"
 
-        return bin_path.read_bytes(), "OK"
+        return bin_.read_bytes(), "OK"
 
 
-def run_in_unicorn(machine_code, instr):
-    """Run bytecode in Unicorn with a DATA memory region and sandbox registers."""
+# ── Execution in Unicorn ─────────────────────────────────────────────────────
+
+def run_in_unicorn(machine_code, dump_memory=False):
+    """Execute one instruction with a sandboxed DATA region and random GPRs."""
     print("\nStarting Unicorn...")
 
     try:
         mu = Uc(UC_ARCH_RISCV, UC_MODE_RISCV64)
 
-        # Map CODE region: 2 MB at ADDRESS_CODE
-        mu.mem_map(ADDRESS_CODE, 2 * 1024 * 1024)
-
-        # Map DATA region: 1 MB starting 64 KB before ADDRESS_DATA
-        # so that x30 + a negative offset still lands inside the mapped area
-        DATA_PAGE_START = ADDRESS_DATA - 0x10000
-        DATA_PAGE_SIZE  = 1 * 1024 * 1024
-        mu.mem_map(DATA_PAGE_START, DATA_PAGE_SIZE)
-
+        # Two regions: code and data. The data region is shifted one page below
+        # ADDRESS_DATA so negative offsets relative to x30 stay mapped.
+        mu.mem_map(ADDRESS_CODE,      CODE_REGION_SIZE)
+        mu.mem_map(DATA_PAGE_START,   DATA_PAGE_SIZE)
         mu.mem_write(ADDRESS_CODE, machine_code)
 
-        # Fill DATA with a recognizable pattern so loads return non-zero values
-        pattern = b"\xAB\xCD\xEF\x01" * (DATA_PAGE_SIZE // 4)
-        mu.mem_write(DATA_PAGE_START, pattern)
+        # Pre-fill data region with a recognizable pattern so loads return non-zero.
+        mu.mem_write(DATA_PAGE_START, b"\xAB\xCD\xEF\x01" * (DATA_PAGE_SIZE // 4))
 
-        regs = [getattr(sys.modules[__name__], f"UC_RISCV_REG_X{i}") for i in range(1, 32)]
-
-        initial_values = {}
-        for i, reg in enumerate(regs, start=1):
+        # Initial register state: x30 = sandbox base, all others random.
+        initial = {}
+        for i in TRACKED_REGS:
             name = f"x{i}"
-            if name == SANDBOX_BASE_REG:
-                val = ADDRESS_DATA
-            elif name == SANDBOX_AUX_REG:
-                val = 0x0000_0000_FFFF_FFFF
-            else:
-                val = random.getrandbits(64)
-            mu.reg_write(reg, val)
-            initial_values[name] = val
+            val = ADDRESS_DATA if name == SANDBOX_BASE_REG else random.getrandbits(64)
+            mu.reg_write(UC_REG[i], val)
+            initial[i] = val
 
         print("\nInitial register values:")
-        for name, val in initial_values.items():
-            marker = "  (sandbox)" if name in RESERVED_REGS else ""
-            print(f"  {name:4s} = 0x{val:016x}{marker}")
+        for i in TRACKED_REGS:
+            tag = "  (sandbox base)" if f"x{i}" == SANDBOX_BASE_REG else ""
+            print(f"  x{i:<2} = 0x{initial[i]:016x}{tag}")
 
         def hook_code(uc, address, size, user_data):
-            print(f"\n -> Executing at 0x{address:x}")
+            print(f"\n  -> executing at 0x{address:x}")
         mu.hook_add(UC_HOOK_CODE, hook_code)
 
         mu.emu_start(ADDRESS_CODE, ADDRESS_CODE + len(machine_code))
 
-        print("\nRegister state after execution:")
+        # Show only registers that changed.
         changed = []
-        for i, reg in enumerate(regs, start=1):
-            name = f"x{i}"
-            new_val = mu.reg_read(reg)
-            old_val = initial_values[name]
-            if new_val != old_val:
-                changed.append((name, old_val, new_val))
+        for i in TRACKED_REGS:
+            new_val = mu.reg_read(UC_REG[i])
+            if new_val != initial[i]:
+                changed.append((i, initial[i], new_val))
 
         if changed:
             print("\nChanged registers:")
-            for name, old, new in changed:
-                print(f"  {name:4s} : 0x{old:016x}  ->  0x{new:016x}")
+            for i, old, new in changed:
+                print(f"  x{i:<2} : 0x{old:016x}  ->  0x{new:016x}")
         else:
-            print("  (no registers changed)")
+            print("\n(no registers changed)")
 
-        # For stores, dump memory near the sandbox base to confirm the write landed
-        if instr["category"] == "RV64I-STORE":
-            print("\nMemory near x30 (sandbox base):")
-            dump = mu.mem_read(ADDRESS_DATA - 16, 64)
+        # For stores, dump memory near the sandbox base to confirm the write.
+        if dump_memory:
+            print("\nMemory near sandbox base:")
+            base = ADDRESS_DATA - 16
+            data = mu.mem_read(base, 64)
             for off in range(0, 64, 8):
-                addr = ADDRESS_DATA - 16 + off
-                octets = dump[off:off+8]
-                print(f"  [0x{addr:08x}] {octets.hex()}")
+                print(f"  [0x{base + off:08x}] {data[off:off+8].hex()}")
 
         return True
 
@@ -220,28 +209,43 @@ def run_in_unicorn(machine_code, instr):
         return False
 
 
-if __name__ == "__main__":
-    print("1. Loading JSON instruction dictionary...")
-    with open("riscv_isa.json", "r") as f:
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+def main():
+    ap = argparse.ArgumentParser(description="Unicorn PoC v3 — memory sandbox for loads/stores")
+    ap.add_argument("--json", default="riscv_isa.json", help="Path to the ISA spec")
+    ap.add_argument("--seed", type=int, help="Random seed for reproducibility")
+    args = ap.parse_args()
+
+    if args.seed is not None:
+        random.seed(args.seed)
+
+    print(f"1. Loading {args.json}...")
+    with open(args.json, "r", encoding="utf-8") as f:
         instructions = json.load(f)
 
-    # Keep loads and stores, skip branches (would jump to unmapped memory) and *W variants
-    instrs_simples = [
+    # Keep loads and stores (sandbox handles them now), skip control flow and *W.
+    testable = [
         i for i in instructions
         if not i.get("is_control_flow", False)
         and not i["name"].endswith("W")
     ]
 
-    instr = random.choice(instrs_simples)
+    instr    = random.choice(testable)
     asm_line = format_instruction(instr)
 
     print(f"2. Generated instruction: {asm_line}")
-    print("3. Compiling and extracting bytecode...")
+    print("3. Compiling to raw bytecode...")
+    code, msg = compile_to_binary(asm_line)
 
-    machine_code, msg = compile_to_binary(asm_line)
-
-    if machine_code:
-        print(f" -> Raw binary: {machine_code.hex()}")
-        run_in_unicorn(machine_code, instr)
-    else:
+    if code is None:
         print(msg)
+        return 1
+
+    print(f"   raw bytes: {code.hex()}")
+    run_in_unicorn(code, dump_memory=(instr["category"] == "RV64I-STORE"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
