@@ -3,6 +3,22 @@
 **Automated differential analysis of a RISC-V soft-core**
 
 ---
+## Table of Contents
+
+- [Overview](#overview)
+- [What the framework detects](#what-the-framework-detects)
+- [Why this project is novel](#why-this-project-is-novel)
+- [How the project is structured](#how-the-project-is-structured)
+- [At a glance](#at-a-glance)
+- [Repository layout](#repository-layout)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Workflow](#workflow)
+- [Historical PoCs](#historical-pocs)
+- [Reproducing results](#reproducing-results)
+- [Architecture summary](#architecture-summary)
+- [Troubleshooting](#troubleshooting)
+- [References](#references)
 
 ## Overview
 
